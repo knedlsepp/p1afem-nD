@@ -1,0 +1,443 @@
+% !TEX encoding = UTF-8 Unicode
+\documentclass[twoside,11pt,a4paper]{article} %TODO: remove "draft"
+%\documentclass[11pt]{scrbook}
+\usepackage{fullpage}
+\usepackage{amssymb, amsthm, amsmath}	% Mathe
+\usepackage{mathtools} %Wäre nett für norm usw.
+\usepackage{hyperref}
+\usepackage{lmodern}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\usepackage[USenglish]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}  %Umlaute beim rauskopieren
+%%%%%%%%%%%%%%%%%%%%
+%\usepackage{breqn}
+%% ALLES FUER GRAPHIKEN
+\usepackage{pgfplots}
+\usepackage{overpic}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepgfplotslibrary{external} 
+\tikzexternalize[prefix=TikzPictures/]
+%\tikzset{external/force remake}
+%% END GRAPHIKEN
+\usepackage{enumitem} % For compressed itemizes
+\usepackage{todonotes}
+\usepackage{csquotes} % For \enquote
+% \usepackage{enumerate}
+\usepackage{bibgerm}
+\usepackage{bbm} % BOLD
+\usepackage{mathtools} % Für \DeclarePairedDelimiter
+\usepackage[final]{listings} % Für listings
+\usepackage[framed,numbered,bw]{mcode}%useliterate %Für matlab-listings
+\lstset{language=Matlab, 
+	frame=tb,
+	deletekeywords={mesh, path},
+	escapechar=?,
+	morekeywords={*,switch,repmat,accumarray,shiftdim,unique,mod,rem,getHatGrads,gradP1,hyperfaceJumpsP0,estimatorPoissonResidual,barycenters,barycentricToCartesians,cleanMesh,dimMesh,dimSpace,meshBd,numBoundaries,numBoundaryElements,numCoordinates,numElements,genMesh,getBoundary,getEdges,getElementVolumes,getHyperfaces,getNeighbors,getNormals,getPatchVolumes,getSignedElementVolumes,getSubsimplices,orientMesh,orientMeshWithoutBoundary,bisectionCoarsen,bisectionRefine,genBisectionMesh,redRefine3D,simplexEdges,simplexHyperfaces,inner_GradHatI_P1_L2,inner_gradP1_gradP1_L2,inner_L2_L2_L2,inner_L2_P0_L2,inner_L2_P1_L2,inner_P0_P0_L2,inner_P0_P1_L2,inner_P1_P1_L2,norm_P1_L2,getBetas,inner_P1_P1_h,norm_P1_h,integrate,integrateP0,integrateP1,simplexQuadratureRule,interpolateClement,interpolateClementP0,interpolateNodal,L2ProjectL2ToP1,L2ProjectP1ToP0,sparseBlockDiag,adaptivePoisson,solvePoisson,saveSolution,surfMesh,surfSolution,getElementsOfBoundary,getBarycenters,setup,norm_L2_L2,norm_P0_L2,norm_P1_h, surfSolution}
+}
+
+%\bibliographystyle{gerplain} % ?english?
+%\bibliographystyle{geralpha} & ?english?
+
+
+%%% To make tikz-externalize and todonotes work:
+\makeatletter
+\renewcommand{\todo}[2][]{\tikzexternaldisable\@todo[#1]{#2}\tikzexternalenable}
+\makeatother
+
+\makeindex
+\begin{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%    DEFINITIONS:
+\newcommand{\grad}{\nabla}
+\DeclarePairedDelimiter{\norm}{\lVert}{\rVert}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\title{P1-AFEM and Computational Geometry Codes}
+  %\author{Josef F. Kemetmüller}
+  \date{April 2014}
+\maketitle
+\newlength\longest
+%\clearpage
+%\thispagestyle{empty}
+\null\vfill
+
+\settowidth\longest{\Large\itshape 2D war gestern..........;}
+\begin{center}
+\parbox{\longest}{%
+  \raggedright{\Large\itshape%
+   \enquote{2D war gestern.}
+  \par\bigskip
+  }   
+  \raggedleft\large\MakeUppercase{Josef F. Kemetmüller}\par%
+}
+\end{center}
+
+\vfill\vfill
+\tableofcontents
+
+\clearpage
+
+\section{Before you start}
+\subsubsection*{\texorpdfstring{\mcode{setup} --}{} Compile the sources for the 3D bisection scheme}
+The 3D bisection scheme provided by this package is programmed in C and needs to be compiled before use by calling the script \mcode{setup}.
+You can try out the bisection scheme by starting a 3D example, e.g. \mcode{exampleSimplex}.
+
+\section{Computational Geometry}
+\subsection{The mesh data structure}
+Throughout the code we will be using the data structure \mcode{mesh}, which contains the arrays \mcode{elements} and \mcode{coordinates} describing the mesh by standard simplex-vertex format. Additionaly a strucure \mcode{mesh} can contain multiple boundaries \mcode{mesh.bd(j).elements} for some ${j}\geq0$ given also in the simplex-vertex format with respect to the nodes in \mcode{coordinates}.
+\subsubsection*{\texorpdfstring{\mcode{genMesh} --}{} Constructor for the mesh data structure}
+\mcode{mesh = genMesh(elements, coordinates, dirichlet, neumann)} will construct a mesh containing
+\begin{itemize}[noitemsep]
+ \item \mcode{mesh.elements == elements},
+ \item \mcode{mesh.coordinates == coordinates},
+ \item \mcode{mesh.bd(1).elements == dirichlet},
+ \item \mcode{mesh.bd(2).elements == neumann}.
+\end{itemize}
+\subsubsection*{\texorpdfstring{\mcode{cleanMesh} --}{} Removes duplicate and unused points from mesh}
+Some mesh generators yield data, which contains duplicate or unused points. \\
+\mcode{cleanedMesh = cleanMesh(mesh)} removes those points and returns the cleaned mesh.
+A mesh does not have to be cleaned to be useful for other functions, but it may be a good idea to clean the initial mesh. This can be seen for example in the code for the solution of the poisson problem.
+\begin{lstlisting}[caption={Excerpt from \mcode{solvePoisson}}]
+dirichletBd = meshBd(mesh,1);
+neumannBd = meshBd(mesh,2);
+b = inner_L2_P1_L2(mesh,      f, [], quadDeg) ...
+  + inner_L2_P1_L2(neumannBd, g, [], quadDeg) ...
+  - A*discretizer(dirichletBd, uD);
+\end{lstlisting}
+\mcode{dirichletBd} and \mcode{neumannBd} will certainly not be \enquote{clean} considering the usage of all points in 
+\\ \mcode{mesh.coordinates}, but this makes it more simple to add the three contributions of \mcode{b}, as their results will all be \mcode{numCoordinates(mesh)-by-1} vectors. Whereas cleaning the boundary meshes would yield vectors of the size 
+\mcode{numCoordinates(mesh)-by-1}, \mcode{numCoordinates(neumannBd)-by-1} and \mcode{numCoordinates(dirichletBd)-by-1}, respectively.
+
+\subsubsection*{\texorpdfstring{\mcode{meshBd} --}{} Mesh structure of the boundary}
+\mcode{bdj = meshBd(mesh, j)} is equivalent to \mcode{bdj = genMesh(mesh.bd(j).elements, mesh.coordinates)}. You can use this to call other functions expecting a mesh data structure as input. For example
+\begin{align*}
+\text{\mcode{integrate(meshBd(mesh,1), f)}}
+\end{align*}can be used to integrate a function $f$ on the Dirichlet boundary $\int_{\Gamma_D} f \,dx$.
+\subsubsection*{\texorpdfstring{\mcode{dimMesh} --}{} Dimension of the mesh}
+\mcode{d = dimMesh(mesh)} returns the dimension of the mesh.
+\subsubsection*{\texorpdfstring{\mcode{dimSpace} --}{} Dimension of the embedding space}
+\mcode{d = dimSpace(mesh)} returns the dimension of the embedding space.
+\subsubsection*{\texorpdfstring{\mcode{numElements} --}{} Number of elements in the mesh}
+\mcode{nE = numElements(mesh)} returns the number of elements in the mesh.
+\subsubsection*{\texorpdfstring{\mcode{numCoordinates} --}{} Number of nodes in the mesh}
+\mcode{nC = numCoordinates(mesh)} returns the number of nodes in the mesh.
+\subsubsection*{\texorpdfstring{\mcode{numBoundaries} --}{} Number of boundaries}
+\mcode{nB = numBoundaries(mesh)} returns the number of boundaries, which are defined on the mesh.
+\subsubsection*{\texorpdfstring{\mcode{numBoundaryElements} --}{} Number of elements in boundaries}
+\mcode{nBE = numBoundaryElements(mesh)} is an array containing the number of elements \mcode{nBE(j)} of \mcode{mesh.bd(j).elements}.
+
+\subsection{Geometrical computations}
+\subsubsection*{\texorpdfstring{\mcode{getBarycenters} --}{} Barycenters of elements}
+\mcode{centers = getBarycenters(mesh)} returns the barycenters of the elements of the mesh.
+You can use \mcode{bdCenters = getBarycenters(meshBd(mesh, j))} to get the barycenters of the boundary \mcode{mesh.bd(j)}.
+
+
+\subsubsection*{\texorpdfstring{\mcode{barycentricToCartesians} --}{} Convert from barycentric to cartesian coordinates}
+\mcode{cartesians = barycentricToCartesians(mesh, barycentric)} yields an array \mcode{cartesians} of the size \mcode{numElements}-by-\mcode{dimSpace}, containing the points obtained by using the given barycentric coordinate as local coordinate on all the elements.
+\subsubsection*{\texorpdfstring{\mcode{getNormals} --}{} Normal vectors of all elements}
+\mcode{normals = getNormals(mesh, 'outwards')} or 
+\mcode{normals = getNormals(mesh, 'inwards')} returns the outwards/inwards facing normals of each elements hyperfaces.
+\subsubsection*{\texorpdfstring{\mcode{getElementVolumes} --}{} Volumes of all elements}
+\mcode{volumes = getElementVolumes(mesh)} computes the volumes of all elements.
+\subsubsection*{\texorpdfstring{\mcode{getSignedElementVolumes} --}{} Signed volumes of all elements}
+\mcode{volumes = getElementVolumes(mesh)} computes the signed volumes of all elements assuming a right handed coordinate system.
+\subsubsection*{\texorpdfstring{\mcode{getPatchVolumes} --}{} Volumes of all node patches}
+\mcode{volumes = getPatchVolumes(mesh)} computes the volumes of all node patches.
+\subsubsection*{\texorpdfstring{\mcode{orientMesh} --}{} Orient a mesh}
+\mcode{mesh = orientMesh(mesh, 'inwards')} or \\
+\mcode{mesh = orientMesh(mesh, 'outwards')} will orient the elements of the mesh and their boundaries, so that its normal vectors will all be either facing inwards or outwards.
+\subsubsection*{\texorpdfstring{\mcode{orientMeshWithoutBoundary} --}{} Orient a mesh, leave boundaries untouched}
+\mcode{mesh = orientMeshWithoutBoundary(mesh, 'inwards')} or \\
+\mcode{mesh = orientMeshWithoutBoundary(mesh, 'outwards')} will orient the elements of the mesh, so that its normal vectors will all be either facing inwards or outwards. The boundary facets will not be changed.
+\subsection{Topological computations}
+\subsubsection*{\texorpdfstring{\mcode{getBoundary} --}{} Topological boundary of the mesh}
+\mcode{boundary = getBoundary(mesh)} returns the topological boundary of the mesh. Additionaly, the boundary can be oriented using \\
+\mcode{boundary = getBoundary(mesh, 'outwards')} or \\
+\mcode{boundary = getBoundary(mesh, 'inwards')}.
+\subsubsection*{\texorpdfstring{\mcode{getEdges} --}{} Edges of the mesh}
+\mcode{[edge2nodes, element2edges, boundaryOne2Edges, ...] = getEdges(mesh)} returns the edges of the mesh.
+The rows \mcode{element2edges(i,:)} are indices into the rows of \mcode{edge2nodes} and will yield the \mcode{dimMesh*(dimMesh+1)/2} edges of the $i$-th element. The rows \mcode{boundaryOne2Edges(i,:)} contain the \mcode{dimMesh} edges of the boundary facet \mcode{mesh.bd.elements(1,:)}.
+\subsubsection*{\texorpdfstring{\mcode{getHyperfaces} --}{} Hyperfaces of the mesh}
+\mcode{[face2nodes, element2faces, boundaryOne2Face, ... ] = getHyperfaces(mesh)} returns the hyperfaces of the mesh.
+The rows \mcode{element2faces(i,:)} are indices into the rows of \mcode{face2nodes} and will yield the \mcode{dimMesh+1} faces of the $i$-th element. The entry \mcode{boundaryOne2Face(i)} contains the index of the boundary hyperface \mcode{mesh.bd(1).elements(i,:)}.
+\subsubsection*{\texorpdfstring{\mcode{getSubsimplices} --}{} Subsimplices of special type or ordering}
+\mcode{[subS2nodes, element2SubS, boundaryOne2SubS] = ...} \\
+\mcode{getSubsimplices(mesh, subsimplex, bdSubsimplex)} is the more flexible variant of \mcode{getEdges} and \mcode{getHyperfaces}. You can choose your own ordering of the array \mcode{element2SubS}.
+\begin{align*}
+ \text{\mcode{[subS2nodes, element2SubS] = getSubsimplices(mesh, [2,3; 1,3; 1,2])}}
+\end{align*}
+will result in \mcode{element2SubS(i,1)} being the edge \mcode{mesh.elements(i,[2,3])}
+Keep in mind though, that the sorting of the nodes in \mcode{subS2nodes} will always be ascending.
+You could use the functions \mcode{simplexEdges} and \mcode{simplexHyperfaces} as input for this function to get the functionality of \mcode{getEdges} and \mcode{getHyperfaces}.
+
+\subsubsection*{\texorpdfstring{\mcode{getNeighbors} --}{} Elements sharing a common hyperface}
+\mcode{element2Neighbors = getNeighbors(mesh)} returns a \mcode{numElements-by-(dimMesh+1)} array containing the row indices of the neighbors of the elements.
+\mcode{element2Neighbors(i,j)} is the neighbor of the $i$-th element corresponding to its $j$-th face: \mcode{elements(i,(1:dimMesh+1)~=j)}.
+\subsubsection*{\texorpdfstring{\mcode{getElementsOfBoundary} --}{} Elements attached to boundary facets}
+\mcode{[bdOne2element, bdTwo2element, ...] = getElementsOfBoundary(mesh)} returns arrays \\ \mcode{bdX2element} containing indices describing to which element a certain boundary facet belongs.\\
+\mcode{mesh.elements(bdOne2element(i),:)} is the element which is attached to the boundary facet \mcode{mesh.bd(1).elements(i,:)}.
+
+
+\subsection{Refinement schemes}
+This package does offer refinement routines for 1D, 2D and 3D meshes. The 1D and 2D meshes will work for an arbitrary embedding space, whereas the 3D refinement scheme only works in $\mathbb{R}^3$.
+Especially for the three dimensional case it is very important that the mesh satisfies certain topological properties. To get a mesh fulfilling these properties the function \mcode{genBisectionMesh} can be used.
+
+\subsubsection*{\texorpdfstring{\mcode{genBisectionMesh} --  }{} Generate a mesh that can be used for bisection}
+\mcode{mesh = genBisectionMesh(mesh)} returns a mesh that can be used for adaptive refinement using bisection.
+In the 3D case the mesh will be finer than the original mesh. In the 1D and 2D case the mesh will remain the same. Coarsening of certain 2D configurations is not possible using an arbitrary mesh. To gain this ability you can force the generation of a finer 2D mesh, that has the property of being able to coarsen it to its initial state.
+For this you can use the option \mcode{mesh = genBisectionMesh(mesh, 'forceRefine')}.
+
+\subsubsection*{\texorpdfstring{\mcode{bisectionRefine} --}{} Refine a mesh by bisection}
+\mcode{mesh = bisectionRefine(mesh, markedElements)} refines the elements \mcode{markedElements} via bisection, refining also other elements to retain the regularity of the mesh.
+
+\subsubsection*{\texorpdfstring{\mcode{bisectionCoarsen} --}{} Coarsen a mesh refined by bisection}
+\mcode{mesh = bisectionCoarsen(mesh, markedElements)} tries to coarsen the elements markedElements
+Default behaviour is to only coarsen nodes, whose entire node patches have been marked for coarsening. You can use 
+\\ \mcode{mesh = bisectionCoarsen(mesh, markedElements, 'force')} to coarsen a node patch, even though only one of its elements has been marked. This however does only perform a single coarsening step, and especially only if the step is directly possible. If you want to mark all elements you can use \\
+\mcode{mesh = bisectionCoarsen(mesh, 'all')}
+
+
+\subsubsection*{\texorpdfstring{\mcode{redRefine3D} --}{} Uniform refinement of a 3D mesh}
+\mcode{mesh = redRefine3D(mesh)} refines a given mesh uniformly using red/regular refinement.
+
+\section{Differentiation}
+\subsubsection*{\texorpdfstring{\mcode{getHatGrads} --}{} Gradients of piecewise linear hat functions}
+\mcode{hatGrads = getHatGrads(mesh)}  returns the gradients of the hat functions (nodal basis of the elementwise linear, globally continuous functions) on the simplicial mesh \mcode{mesh}. \mcode{hatGrads} is a \mcode{(dimMesh+1)}-cell array, so that \mcode{hatGrads\{j\}(i,:)} is the gradient of the hat function corresponding to the node \mcode{mesh.elements(i,j)} on the element \mcode{mesh.elements(i,:)}.
+
+\subsubsection*{\texorpdfstring{\mcode{gradP1} --}{} Gradient of a piecewise linear function}
+\mcode{P0 = gradP1(mesh, P1)} returns the gradient of the function \mcode{P1} represented via the nodal basis as a \mcode{numCoordinates-by-dimP1} matrix, where \mcode{dimP1} is the dimension of the codomain of the function \mcode{P1}. \mcode{P0} is a \mcode{numElements-by-dimSpace*dimP1} array containing the gradients on all elements.
+
+\subsubsection*{\texorpdfstring{\mcode{hyperfaceJumpsP0} --}{} Normal jumps of a piecewise constant function}
+\mcode{jumps = hyperFaceJumpsP0(mesh, P0)} returns an array \mcode{jumps} corresponding to the faces returned by \mcode{getHyperfaces}. \mcode{P0} is a \mcode{dimSpace}-vector-valued elementwise constant function. \mcode{jumps} is a function defined on the mesh's hyperfaces(\enquote{skeleton}, i.e. the array \mcode{face2nodes} returned by \mcode{getHyperfaces}) and is piecewise constant. For boundary faces it yields the outwards jump.
+\mcode{jumps} is NOT scaled by the areas of the hyperfaces. As the skeleton is also a simplicial complex you can use the integration/inner product routines to integrate the jumps, to get the the jumps scaled with their corresponding areas.
+This function can be used to compute the normal derivative of a function \mcode{P1} in the $L^1$ or $L^2$ norm.
+\begin{lstlisting}
+    Jhdudn = hyperfaceJumpsP0(mesh, gradP1(mesh,x));
+    skeleton = genMesh(face2nodes, mesh.coordinates);
+    normsL1 = integrateP0(skeleton, abs(Jhdudn), 'elementwise');
+    normsL2 = integrateP0(skeleton, Jhdudn.^2, 'elementwise');
+    normsL2 = inner_P0_P0_L2(skeleton, Jhdudn, Jhdudn, 'elementwise');
+\end{lstlisting}
+
+
+\section{Integration}
+\subsection{Pure integration}
+
+\subsubsection*{\texorpdfstring{\mcode{simplexQuadratureRule} --}{} Quadrature rule for single simplex}
+ \mcode{[weights, points] = simplexQuadratureRule(dim, quadDeg)} returns quadrature weights and points in barycentric coordinates for a simplex of dimension \mcode{dim} using \mcode{quadDeg^dim} quadrature points.
+ These quadrature rules are used for all the underlying numerical integrations of function handles done by the routines in this section.
+\subsubsection*{\texorpdfstring{\mcode{integrate} -- $\int f \,dx $ --}{} Integrate a function handle}
+\mcode{integral = integrate(mesh, f, quadDeg)} returns the integral over the given mesh of the function handle \mcode{f}. \mcode{quadDeg} is an integer representing the number of quadrature points used
+in the underlying tensor gaussian quadrature. \\
+\mcode{integrals = integrate(mesh, f, quadDeg, 'elementwise')} returns a
+\mcode{numElements-by-dimf} array containing the elementwise integrals. \\
+\mcode{integrals = integrate(mesh, f, quadDeg, 'patchwise')} returns a
+\mcode{numCoordinates-by-dimf} array containing the integrals of all node patches.
+The function f must be given in a manner, that $n$ points can
+be evaluated simultaneously given as a \mcode{n-by-dimSpace} matrix.
+If you don't have a vectorized version of the function $f$ it can be
+integrated using the (slower) option \mcode{'for'}: \\
+\mcode{integrals = integrate(..., 'for')}.
+\subsubsection*{\texorpdfstring{\mcode{integrateP0} -- $\int \chi \,dx $ --}{} Integrate a piecewise constant function}
+\mcode{integral = integrateP0(mesh, P0)} returns the integral over the given mesh of the function \mcode{P0}, which is given by a \mcode{numElements-by-dimP0} matrix. \\
+\mcode{integrals = integrateP0(mesh, P0, 'elementwise')} returns a \mcode{numElements-by-dimP0}
+array containing the elementwise integrals. \\
+\mcode{integrals = integrateP0(mesh, P0, 'patchwise')} returns a \mcode{numCoordinates-by-dimP0}
+array containing the integrals of all node patches.
+
+\subsubsection*{\texorpdfstring{\mcode{integrateP1} -- $\int \phi \,dx $ --}{} Integrate a piecewise linear function}
+\mcode{integral = integrateP1(mesh, P1)} returns the integral of the function \mcode{P1} which is given by a \mcode{numCoordinates-by-dimP1} matrix over the given mesh. \\
+\mcode{integrals = integrateP1(mesh, P1, 'elementwise')} returns a \mcode{nE-by-dimP1} array containing the elementwise integrals. \\
+\mcode{integrals = integrateP1(mesh, P1, 'patchwise')} returns a \mcode{numCoordinates-by-dimP1}
+array containing the integrals of all node patches.
+\subsection{Inner products and testing with testfunctions}
+\subsubsection*{\texorpdfstring{\mcode{inner_L2_L2_L2} -- $\int f \cdot g \,dx$ --}{} Inner product of two general \texorpdfstring{$L^2$}{square integrable} functions}
+\mcode{S = inner_L2_L2_L2(mesh, f, g)} returns the $L^2$ scalar product of \mcode{f} and \mcode{g}. The functions must be given as function handles. \\
+\mcode{S = inner_L2_L2_L2(mesh, f, g, quadDeg)} uses \mcode{quadDeg} as quadrature degree. \\
+\mcode{Ss = inner_L2_L2_L2(mesh, f, g, quadDeg, 'elementwise')} yields the elementwise $L^2$ scalar product.
+\subsubsection*{\texorpdfstring{\mcode{inner_L2_P0_L2} -- $\int f \cdot \chi \,dx$ --}{} Inner product of general \texorpdfstring{$L^2$}{square integrable} and piecewise constant function}
+\mcode{V = inner_L2_P0_L2(mesh, f)} returns the vector \mcode{V} of the function \mcode{f} tested with the basis of the piecewise constant functions.
+\begin{align*}
+ V_i = \int f \cdot \mathbbm{1}_{T_i} \,dx,
+\end{align*}
+where $T_i$ is the element \mcode{mesh.elements(i,:)}. \\
+\mcode{V = inner_L2_P0_L2(mesh, f, P0)} returns the inner product $(f, p_0)_{L^2}$.
+To specify the quadrature degree the commands \\
+\mcode{S = inner_L2_P0_L2(mesh, f, P0, quadDeg)} and \\
+\mcode{V = inner_L2_P0_L2(mesh, f, [], quadDeg)} can be used.
+
+\subsubsection*{\texorpdfstring{\mcode{inner_L2_P1_L2} -- $\int f \cdot \phi \,dx$ --}{} Inner product of general \texorpdfstring{$L^2$}{square integrable} and piecewise linear function}
+\mcode{V = inner_L2_P1_L2(mesh, f)} returns the vector \mcode{V} of \mcode{f} tested with all piecewise linear hat functions $\varphi_i$, which correspond to the node \mcode{mesh.coordinates(i,:)}. \\
+\mcode{S = inner_L2_P1_L2(mesh, f, P1)} returns the inner product $(f, p_1)_{L^2}$
+To specify the quadrature degree the commands \\
+\mcode{S = inner_L2_P1_L2(mesh, f, P1, quadDeg)} and \\
+\mcode{V = inner_L2_P1_L2(mesh, f, [], quadDeg)} can be used.
+
+\subsubsection*{\texorpdfstring{\mcode{inner_P1_P1_L2} -- $\int \phi_1 \cdot \phi_2 \,dx$ --}{} Inner product of two piecewise linear functions}
+\mcode{S = inner_P1_P1_L2(mesh, phi_1, phi_2)} returns the inner product $(\phi_1, \phi_2)_{L^2}$. \\
+\mcode{V = inner_P1_P1_L2(mesh, phi)} returns the vector \mcode{V} of \mcode{phi} tested with all hat functions.
+\begin{align*}
+ V_i = \int \phi \cdot \varphi_i \,dx,
+\end{align*}
+where $\varphi_i$ is the hat function associated with the node \mcode{mesh.coordinates(i,:)}. \\
+\mcode{M = inner_P1_P1_L2(mesh)} or \mcode{M = inner_P1_P1_L2(mesh, [], [], dimPhi)} returns the matrix \mcode{M}, whose entries are defined by $M_{ij} = \int \varphi_i \varphi_j \,dx$.
+This matrix is sometimes called \enquote{mass matrix}.
+
+\subsubsection*{\texorpdfstring{\mcode{inner_P0_P1_L2} -- $\int \chi \cdot \phi \,dx$ --}{} Inner product of piecewise constant and piecewise linear function}
+\mcode{S = inner_P0_P1_L2(mesh, P0, P1)} returns the inner product $(p_0, p_1)_{L^2}$. \\
+\mcode{V = inner_P0_P1_L2(mesh, P0)} returns the vector \mcode{V} of the function \mcode{P0} tested with all hat functions.
+\begin{align*}
+ V_i = \int p_0 \cdot \varphi_i \,dx,
+\end{align*}
+where $\varphi_i$ is the hat function associated with the node \mcode{mesh.coordinates(i,:)}. \\
+\mcode{V = inner_P0_P1_L2(mesh, [], P1)} returns the vector \mcode{V} of \mcode{P1} tested with the basis of the piecewise constant functions.
+\begin{align*}
+ V_i = \int p_1 \cdot \mathbbm{1}_{T_i} \,dx,
+\end{align*}
+where $T_i$ is the element \mcode{mesh.elements(i,:)}. \\
+\mcode{M = inner_P0_P1_L2(mesh)} or \mcode{M = inner_P0_P1_L2(mesh, [], [], dimPhi)} returns the matrix \mcode{M}, whose entries are defined by \begin{align*}
+M_{ij} = \int \mathbbm{1}_{T_i} \cdot \varphi_j \,dx.
+\end{align*}
+
+\subsubsection*{\texorpdfstring{\mcode{inner_P0_P0_L2} -- $\int \chi_1 \cdot \chi_2 \,dx$ --}{} Inner product of two piecewise constant functions}
+\mcode{S = inner_P0_P0_L2(mesh, P0_1, P0_2)} returns the inner product $(p_{0,1}, p_{0,2})_{L^2}$. \\
+\mcode{V = inner_P0_P0_L2(mesh, P0)} returns the vector \mcode{V} of the function \mcode{P0} tested with the basis of the piecewise constant functions.
+\begin{align*}
+ V_i = \int p_0 \cdot \mathbbm{1}_{T_i} \,dx,
+\end{align*}
+where $T_i$ is the element \mcode{mesh.elements(i,:)}. \\
+\mcode{M = inner_P0_P0_L2(mesh)} or \mcode{M = inner_P0_P0_L2(mesh, [], [], dimP0)} returns the matrix \mcode{M}, whose entries are defined by \begin{align*}
+ M_{ij} = \int \mathbbm{1}_{T_i} \cdot \mathbbm{1}_{T_j} \,dx.
+\end{align*}
+\subsubsection*{\texorpdfstring{\mcode{inner_gradP1_gradP1_L2} -- $\int \grad \phi_1 \cdot \grad \phi_2 \,dx$ --}{} Inner product of gradients of piecewise linear functions}
+\mcode{S = inner_gradP1_gradP1_L2(mesh, phi_1, phi_2)} returns the inner product $(\grad \phi_1, \grad \phi_2)_{L^2}$. \\
+\mcode{V = inner_gradP1_gradP1_L2(mesh, phi)} returns the vector \mcode{V} of $\grad \phi$ tested with all gradients of hat functions.
+\begin{align*}
+ V_i = \int\grad \phi \cdot \grad \varphi_i \,dx
+\end{align*}
+where $\varphi_i$ is the hat function associated with the node \mcode{mesh.coordinates(i,:)}. \\
+\mcode{M = inner_gradP1_gradP1_L2(mesh)} or \mcode{M = inner_gradP1_gradP1_L2(mesh, [], [], dimPhi)} returns the matrix, whose entries are defined by
+\begin{align*}
+ M_{ij} = \int \grad \varphi_i \cdot \grad \varphi_j \,dx
+\end{align*}
+
+\subsubsection*{\texorpdfstring{\mcode{inner_GradHatI_P1_L2} -- $\int  \phi \cdot \grad \varphi_i \,dx$ --}{} Inner products of gradients of hat functions and piecewise linear function}
+\mcode{V = inner_GradHatI_P1_L2(mesh, P1)} returns the vector of \mcode{P1} tested by all gradients of hat functions.
+\begin{align*}
+ V_i = \int p_1 \cdot \grad \varphi_i \,dx.
+\end{align*}
+
+\subsubsection*{\texorpdfstring{\mcode{norm_L2_L2} -- $\norm{f}_{L^2}$ --}{} \texorpdfstring{$L^2$}{L2} norm of \texorpdfstring{$L^2$}{square integrable} function }
+\mcode{N = norm_L2_L2(mesh, f)} returns the $L^2$ norm of the function handle \mcode{f}.
+\subsubsection*{\texorpdfstring{\mcode{norm_P1_L2} -- $\norm{\phi}_{L^2}$ --}{} \texorpdfstring{$L^2$}{L2} norm of piecewise linear function }
+\mcode{N = norm_P1_L2(mesh, P1)} returns the $L^2$ norm of the piecewise linear function \mcode{P1}.
+\subsubsection*{\texorpdfstring{\mcode{norm_P0_L2} -- $\norm{\chi}_{L^2}$ --}{} \texorpdfstring{$L^2$}{L2} norm of piecewise constant function }
+\mcode{N = norm_P0_L2(mesh, P0)} returns the $L^2$ norm of the piecewise constant function \mcode{P0}.
+\subsection{Reduced integration}
+\subsubsection*{\texorpdfstring{\mcode{inner_P1_P1_h} -- $\int \mathcal{I}_h(\phi_1 \cdot \phi_2) \,dx$ --}{} \texorpdfstring{$h$}{Reduced} inner product of piecewise linear functions}
+\mcode{S = inner_P1_P1_h(mesh, phi_1, phi_2)} returns the reduced inner product
+\begin{align*}
+(\phi_1, \phi_2)_h := \int \mathcal{I}_h(\phi_1 \cdot \phi_2) \,dx,
+\end{align*}
+with $\mathcal{I}_h$ being the nodal interpolant. \\
+\mcode{V = inner_P1_P1_h(mesh, phi)} returns the vector \mcode{V} of \mcode{phi} tested with all hat functions.
+\begin{align*}
+ V_i = \int \mathcal{I}_h(\phi \cdot \varphi_i) \,dx,
+\end{align*}
+where $\varphi_i$ is the hat function associated with the node \mcode{mesh.coordinates(i,:)}. \\
+\mcode{M = inner_P1_P1_h(mesh)} or \mcode{M = inner_P1_P1_h(mesh, [], [], dimPhi)} returns the matrix \mcode{M}, whose entries are defined by $M_{ij} = \int \mathcal{I}_h(\varphi_i \cdot \varphi_j) \,dx$.
+This matrix is sometimes called \enquote{reduced mass matrix}.
+
+\subsubsection*{\texorpdfstring{\mcode{norm_P1_h} -- $\norm{\phi}_{h}$ --}{} \texorpdfstring{$h$}{h} norm of piecewise linear function}
+\mcode{N = norm_P1_h(mesh, P1)} returns the norm induced by the reduced inner product $(\cdot, \cdot)_h$ of some function \mcode{P1}.
+\begin{verbatim}
+
+
+\end{verbatim}
+
+\section{Operators}
+\subsection{(Quasi-)Interpolation}
+\subsubsection*{\texorpdfstring{\mcode{interpolateClement} --}{} Clement interpolate a general function}
+\mcode{P1 = interpolateClement(mesh, f)} returns the elementwise linear, globally continuous function \mcode{P1}, whose nodal-values are the integral means of \mcode{f} on the corresponding node-patches.
+\subsubsection*{\texorpdfstring{\mcode{interpolateClementP0} --}{} Clement interpolate a piecewise constant function}
+\mcode{P1 = interpolateClementP0(mesh, P0)} returns the elementwise linear, globally continuous function P1, whose nodal-values are the integral means of \mcode{P0} on the corresponding node-patches.
+\subsubsection*{\texorpdfstring{\mcode{interpolateNodal} --}{} Nodal interpolant for a general function}
+\mcode{P1 = interpolateNodal(mesh, f)} returns the elementwise linear, globally continuous function \mcode{P1}, whose nodal-values are the evaluations of the function \mcode{f}.
+\subsection{\texorpdfstring{$L^2$}{L2} projections}
+\subsubsection*{\texorpdfstring{\mcode{L2ProjectL2ToP1} --}{} \texorpdfstring{$L^2$}{L2} projection onto piecewise linear functions}
+\mcode{P1 = L2ProjectL2ToP1(mesh, f)} returns the $L^2$-projection of \mcode{f} onto the space of elementwise linear, globally continuous functions.
+\subsubsection*{\texorpdfstring{\mcode{L2ProjectP1ToP0} --}{} \texorpdfstring{$L^2$}{L2} projection onto piecewise constant functions}
+\mcode{P0 = L2ProjectP1ToP0(mesh, P1)} projects a piecewise linear function \mcode{P1} onto the space of elementwise constant functions using the $L^2$ projection.
+% \subsubsection*{\texorpdfstring{\mcode{XXX} --}{} YYY}
+
+
+
+\section{The Poisson problem}
+\subsubsection*{\texorpdfstring{\mcode{solvePoisson} --}{} Solve the poisson problem}
+\mcode{x = solvePoisson(mesh, f, g, uD, discretizer, quadDeg)} solves the poisson problem
+\begin{align*}
+\int_\Omega \grad u \cdot \grad v \,dx =  \int_\Omega f v \,dx + \int_{\Gamma_N} g v \,ds, \quad \text{ for all } v \in H_D^1(\Omega)
+\end{align*}
+assuming the additional boundary condition $u = u_D$ on $\Gamma_D$.
+\begin{itemize}
+ \item \mcode{x} is the piecewise linear solution,
+ \item \mcode{mesh} is a mesh data structure generated by \mcode{genMesh}, describing the domain $\Omega$ and its boundaries $\Gamma_D$ and $\Gamma_N$,
+ \item \mcode{f}, \mcode{g} and \mcode{uD} are function handles representing $f$, $g$ and $u_D$,
+ \item \mcode{discretizer} is a function handle of the signature \mcode{@(dirichletBd, uD)} that discretizes the function $u_D$,
+ \item \mcode{quadDeg} is the quadrature degree used for the underlying numerical integrations of $f$ and $g$.
+\end{itemize}
+
+\subsubsection*{\texorpdfstring{\mcode{adaptivePoisson} --}{} Solve the poisson problem using adaptive mesh refinement}
+\mcode{[x, refinedMesh, indicators] = adaptivePoisson(mesh, f, g, uD, nEmax, ...} \\
+\mcode{ rho, discretizer, quadDeg, postProcessor)}
+\begin{itemize}
+ \item \mcode{x} is the piecewise linear solution, corresponding to the output \mcode{refinedMesh}
+ \item \mcode{indicators} are the last iterations error indicators, returned by \mcode{estimatorPoissonResidual},
+ \item \mcode{mesh} is a mesh data structure generated by \mcode{genMesh}, describing the domain $\Omega$ and its boundaries $\Gamma_D$ and $\Gamma_N$,
+ \item \mcode{f}, \mcode{g} and \mcode{uD} are function handles representing $f$, $g$ and $u_D$,
+ \item \mcode{discretizer} is a function handle of the signature \mcode{@(dirichletBd, uD)} that discretizes the function $u_D$,
+ \item \mcode{quadDeg} is the quadrature degree used for the underlying numerical integrations of $f$ and $g$.
+ \item \mcode{postProcessor} is an optional function handle with the signature \mcode{@(mesh, x, indicators)} which can be used for plotting or saving the solution, e.g. \mcode{postProcessor = @surfSolution} or \mcode{postProcessor = @(mesh, x, ind_) saveSolution('example2D', mesh, x)}
+\end{itemize}
+Here is an example, that solves the poisson problem on a square.
+\lstinputlisting[caption={\mcode{poisson.m}}]{./MATLAB/poisson.m}
+\subsubsection*{\texorpdfstring{\mcode{estimatorPoissonResidual} --}{} Error estimator for the poisson problem}
+\mcode{etaR = estimatorPoissonResidual(mesh, x, f, g, quadDeg)} computes the error estimator given on an element $T$ by the equation
+\begin{align*}
+ \eta_T^2:=& h_T^2 \norm{f}_{L^2(T)}^2 + h_T \norm{J_h(\partial_n U)}_{L^2(\partial T \cap \Omega)}^2 + h_T \norm{g - \partial_n U}_{L^2(\partial T \cap \Gamma_N)}^2.
+\end{align*}
+\begin{itemize}
+ \item \mcode{etaR} is a vector containing the values $\eta_T^2$,
+ \item \mcode{mesh} is a mesh data structure generated by \mcode{genMesh}, describing the domain $\Omega$ and its boundaries $\Gamma_D$ and $\Gamma_N$,
+ \item \mcode{f}, \mcode{g} are function handles representing $f$ and $g$,
+ \item \mcode{quadDeg} is the quadrature degree used for the underlying numerical integrations of $f$ and $g$.
+\end{itemize}
+
+\section{Visualization and Postprocessing}
+\subsubsection*{\texorpdfstring{\mcode{saveSolution} --}{} Save the solutions during simulation}
+Use this function as the \mcode{postProcessor} argument in the adaptivePoisson function. \\
+\mcode{postProcessor = @(mesh, x, ind_) saveSolution('example2D', mesh, x)} \\
+It will save the solution of each adaptive step.
+\subsubsection*{\texorpdfstring{\mcode{surfSolution} --}{} Plot the solutions during simulation}
+Use this function as the \mcode{postProcessor} argument in the adaptivePoisson function.\\
+\mcode{postProcessor = @surfSolution}
+It will plot the solution of each adaptive step.
+\subsubsection*{\texorpdfstring{\mcode{surfMesh} --}{} Plot a mesh structure}
+\mcode{surfMesh(mesh)} will plot a one, two or three dimensional mesh. \\
+\mcode{surfMesh(mesh, P1)} will plot a piecewise linear function \mcode{P1} corresponding to the nodes of the mesh.
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+
+
+\end{document}
