@@ -1,5 +1,5 @@
 function P1 = L2ProjectL2ToP1(mesh, L2, quadDeg)
-%L2PROJECTL2TOP1 L2-Projection from L2 to P0.
+%L2PROJECTL2TOP1 L2-Projection from L2 to P1.
 %   P1 = L2PROJECTL2TOP1(MESH, L2) returns the L2-projection onto the space
 %   of elementwise linear, globally continuous functions.
 %
