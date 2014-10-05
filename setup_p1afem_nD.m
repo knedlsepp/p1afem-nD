@@ -1,5 +1,5 @@
 % THIS SCRIPT COMPILES THE BISECTION-SOURCE
-[pathstrmain, name, ext] = fileparts(mfilename('fullpath'));
-addpath(genpath(pathstrmain),'-begin');
+[Bispathstrmain, name, ext] = fileparts(mfilename('fullpath'));
+addpath(genpath(Bispathstrmain),'-begin');
 compileBisectionSource;
-cd(pathstrmain);
+cd(Bispathstrmain);
