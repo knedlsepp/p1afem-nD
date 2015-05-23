@@ -63,7 +63,7 @@ else % general case for dimMesh <= dimSpace
         % for d<n too, using the following approach! (This wouldn't work if
         % we were to consider the extended system: [1,1,1;coord]\[0,0;1,0;0,1] !!!)
         B = bsxfun(@minus, mesh.coordinates(nodes(2:end), :), ...
-                           mesh.coordinates(nodes(1), :) )';
+                           mesh.coordinates(nodes(1), :) ).';
         grads = B\eye(dimSpace(mesh));
         hatGrads{1}(el,:) = -sum(grads,1);
         for i = 2:dimMesh(mesh)+1

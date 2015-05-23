@@ -4,6 +4,7 @@ function P1 = L2ProjectL2ToP1(mesh, L2, quadDeg)
 %   of elementwise linear, globally continuous functions.
 %
 %   See also:
+%   L2PROJECTL2TOP0
 %   INTERPOLATECLEMENT
 %   INTERPOLATENODAL
 %
