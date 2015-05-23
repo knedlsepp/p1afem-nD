@@ -1,5 +1,5 @@
-%% Solve the variable coefficient Poisson problem:
-%   div(c*grad(u)) = delta(x-x0)
+%% Solve the variable coefficient Poisson problem with point source RHS
+%   div(c*grad(u)) = f+delta(x-x0)
 
 %% Mesh
 [X,Y] = ndgrid(linspace(-1,1,101));
